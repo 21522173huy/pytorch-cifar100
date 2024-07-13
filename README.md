@@ -1,5 +1,6 @@
 # Homework2
-Practicing CNNs on Chinese characters dataset
+- Practicing CNNs on Chinese characters dataset
+- Link drive pretrained weight's folder : https://drive.google.com/drive/folders/1XIQdBr2X_ULUf4Jw1ZvaUENw0bqg2NC-?usp=drive_link
 
 ## Description
 - For homework 1, I used basic resnet152 from pytorch
