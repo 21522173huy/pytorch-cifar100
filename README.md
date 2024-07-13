@@ -46,6 +46,8 @@ python inference.py \
 ### For homework 3
 ```
 pip install editdistance
+```
+```
 python homework3.py \
 --test_folder <your_test_folder> \
 --label_path <your_952labels_path> \
