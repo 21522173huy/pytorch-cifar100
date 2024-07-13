@@ -1,0 +1,98 @@
+
+from torch.utils.data import Dataset, DataLoader
+import torch
+from torchvision.models import ResNet152_Weights, resnet152
+from torchvision import transforms
+import matplotlib.pyplot as plt
+from torch import nn
+from dataset import UAVDataset
+from mlp_classifier import MLP_Classifier
+from moe_classifier import MoE_Classifier
+from tqdm import tqdm
+import editdistance 
+
+import argparse
+parser = argparse.ArgumentParser(description='A simple command-line argument parser')
+
+# Add arguments
+parser.add_argument('--test_folder', type=str, help='Test folder')
+parser.add_argument('--label_path', type=str, help='File 952_labels.txt')
+parser.add_argument('--mode', type=str, choices=['normal', 'mlp', 'moe'], default='normal', help='Choose classifier layer')
+parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
+
+args = parser.parse_args()
+
+# Labels
+with open('/content/homework2/etl_952_singlechar_size_64/etl_952_singlechar_size_64/952_labels.txt', 'r') as f:
+    lines = f.readlines()
+
+label_list = []
+for i, line in enumerate(lines):
+    if i == 0 : continue
+    if line.strip():
+        parts = line.strip().split()
+        label = int(parts[0])
+        character = parts[1]
+        latin = parts[-1]
+        label_list.append({
+            'latin' : latin,
+            'character' : character
+        })
+
+# Transform
+transform = transforms.Compose([
+    transforms.ToTensor(),
+])
+
+# Dataset, Dataloader
+test_data = UAVDataset(data_folder = args.test_folder,
+                        label_list = label_list,
+                        transform = transform)
+test_dataloader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
+
+# Load Model
+model = resnet152(weights = None)
+if args.mode == 'mlp':
+  model.fc = MLP_Classifier(in_features=2048,
+                                  out_features=952,
+                                  hidden_size = 1024)
+elif args.mode == 'moe':
+  model.fc = MoE_Classifier(in_features=2048,
+                                  out_features=952,
+                                  hidden_size = 1024)
+else:
+  model.fc = nn.Linear(in_features=2048, out_features=952, bias=True)
+
+# Load checkpoint
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+checkpoint = torch.load(f'downloaded_weights/{args.mode}_ckg.pth', map_location = torch.device(device))
+model.load_state_dict(checkpoint['model_state_dict'])
+
+def levenshtein_fn(prediction, ground_truth):
+  levenshtein = 0
+  for one, two in zip(prediction, ground_truth):
+    levenshtein += editdistance.eval(one, two)
+
+  return levenshtein
+
+# Inference
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+total_correct = 0
+total_samples = 0
+
+model.eval()
+model.to(device)
+
+total_levenshtein, total_length = 0, 0
+method = test_data.get_latin
+
+for sample in tqdm(test_dataloader):
+  image, ground_truth, length = sample['image'].to(device), sample['latin'], sample['length']
+  output = model(image)
+
+  if args.mode == 'moe' : prediction = method(output[0].argmax(dim = -1))
+  else : prediction = method(output.argmax(dim = -1))
+  total_levenshtein += levenshtein_fn(prediction, ground_truth)
+  total_length += length.sum()
+
+print(f'Accuracy: {1 - total_levenshtein/total_length}')
